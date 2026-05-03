@@ -1,0 +1,6 @@
+{
+  "devDependencies": {
+    "mysql2": "^3.22.3",
+    "prettier": "^3.8.3"
+  }
+}
