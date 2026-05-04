@@ -60,6 +60,10 @@ function makeFileName(mode, row, column, keyColumn) {
   return fileName;
 }
 
+function getKeyFromFileName(fileName) {
+  return (nameWithoutExt = path.parse(fileName).name);
+}
+
 // No need for a return - script will bomb
 async function checkForDupesComposite(conn) {
   const [dupes] = await conn.execute(`SELECT
@@ -98,16 +102,22 @@ async function checkForDupes(conn, keyColumn, table) {
     }
 
     throw new Error(`Aborting export because ${table}.${keyColumn} is not unique.`);
+  } else {
+    console.log(`dupe check for ${table} passed`);
   }
 }
 
 async function main() {
+  // --table ViewTemplate
+  // --in "C:\Users\lisac\Documents\easi\easi-concerto-code\ViewTemplate"
+  // --columns html,js,css
+  // --key
+  // --dry-run=true
+
   // Table name is either ViewTemplate, Test, or TestNodePort
   const table = safeIdentifier(getArg('table'), 'table');
+  const dryRun = getArg('dry-run') == 'true';
   const exportMode = safeIdentifier(getArg('mode'), 'mode');
-  // for ViewTemplate this is "name",
-  // for Test this is "name"
-  // for TestNodePort this is composite
   const keyColumn = safeIdentifier(getArg('key', 'name'), 'key column');
   const columns = getArg('columns')
     .split(',')
@@ -121,11 +131,10 @@ async function main() {
     throw new Error('You must provide the table value.');
   }
 
-  if (exportMode != 'composite' && !keyColumn) {
+  const inputRoot = getArg('in');
+  if (!inputRoot) {
     throw new Error('You must provide the key column.');
   }
-
-  const outRoot = getArg('out', `./exports/${table}`);
 
   const conn = await mysql.createConnection({
     host: process.env.DB_HOST || '127.0.0.1',
@@ -136,13 +145,14 @@ async function main() {
     connectTimeout: 60000,
   });
 
-  // Bomb if this fails
+  // 1) Check for duplicate rows in the database table
   if (exportMode === 'composite') {
     await checkForDupesComposite(conn);
   } else {
     await checkForDupes(conn, keyColumn, table);
   }
 
+  // Execute the query to get the data
   let rows = [];
   if (exportMode == 'composite') {
     rows = await conn.execute(`
@@ -174,18 +184,70 @@ async function main() {
   }
 
   const dataRows = rows[0];
-  fs.mkdirSync(outRoot, { recursive: true });
 
+  // 2) First check that there is a file for every row
   for (const row of dataRows) {
     for (const column of columns) {
-      const fileName = makeFileName(exportMode, row, column);
-      writeIfPresent(path.join(`${outRoot}//${fileName}`), row[column]);
+      if (row[column] != null && row[column] !== '') {
+        const fileName = makeFileName(exportMode, row, column, keyColumn);
+
+        const filePath = path.join(inputRoot, fileName);
+        if (!fs.existsSync(filePath)) {
+          console.log(`No ${table} file for ${column} column for ${row[keyColumn]}`);
+        } else {
+          console.log(`file for ${table} for ${column} for ${row[keyColumn]} exists`);
+        }
+      }
+    }
+  }
+
+  // 3) Check that there is a row for every file
+  const files = await fs.promises.readdir(inputRoot);
+  const fileNames = files.map((file) => getKeyFromFileName(file));
+  const placeholders = fileNames.map(() => '?').join(', ');
+
+  const [fileRows] = await conn.execute(
+    `SELECT \`${keyColumn}\`
+   FROM \`${table}\`
+   WHERE \`${keyColumn}\` IN (${placeholders})`,
+    fileNames,
+  );
+  const existingKeys = new Set(fileRows.map((row) => row[keyColumn]));
+
+  for (const file of files) {
+    const name = getKeyFromFileName(file);
+
+    if (!existingKeys.has(name)) {
+      console.log(`no row for file ${file}`);
+    } else {
+      console.log(`row exists for file ${file}`);
+    }
+  }
+
+  // 3) If not dry run, update the sql data for each changed file
+
+  for (const row of dataRows) {
+    // get the filename
+    for (const column of columns) {
+      if (row[column] != null && row[column] !== '') {
+        const fileName = makeFileName(exportMode, row, column, keyColumn);
+
+        const filePath = path.join(inputRoot, fileName);
+        if (!fs.existsSync(filePath)) {
+          console.log(`No ${table} file for ${column} column for ${row[keyColumn]}`);
+        } else {
+          const fileContents = await fs.promises.readFile(filePath, 'utf8');
+          if (fileContents !== row[column]) {
+            console.log('need to update row ', row[keyColumn]);
+          } else {
+            console.log(`${row[keyColumn]} is unchanged for ${table}`);
+          }
+        }
+      }
     }
   }
 
   await conn.end();
-
-  console.log(`Exported ${dataRows.length} rows from ${table} to ${outRoot}`);
 }
 
 main().catch((err) => {
