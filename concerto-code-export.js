@@ -178,7 +178,7 @@ async function main() {
 
   for (const row of dataRows) {
     for (const column of columns) {
-      const fileName = makeFileName(exportMode, row, column);
+      const fileName = makeFileName(exportMode, row, column, keyColumn);
       writeIfPresent(path.join(`${outRoot}//${fileName}`), row[column]);
     }
   }
