@@ -102,8 +102,6 @@ async function checkForDupes(conn, keyColumn, table) {
     }
 
     throw new Error(`Aborting export because ${table}.${keyColumn} is not unique.`);
-  } else {
-    console.log(`dupe check for ${table} passed`);
   }
 }
 
@@ -117,6 +115,7 @@ async function main() {
   // Table name is either ViewTemplate, Test, or TestNodePort
   const table = safeIdentifier(getArg('table'), 'table');
   const dryRun = getArg('dry-run') == 'true';
+  console.log('dryRun is ', dryRun);
   const exportMode = safeIdentifier(getArg('mode'), 'mode');
   const keyColumn = safeIdentifier(getArg('key', 'name'), 'key column');
   const columns = getArg('columns')
@@ -145,12 +144,15 @@ async function main() {
     connectTimeout: 60000,
   });
 
+  let warnings = false;
+
   // 1) Check for duplicate rows in the database table
   if (exportMode === 'composite') {
     await checkForDupesComposite(conn);
   } else {
     await checkForDupes(conn, keyColumn, table);
   }
+  console.log('Duplicate table key check passed.');
 
   // Execute the query to get the data
   let rows = [];
@@ -193,12 +195,15 @@ async function main() {
 
         const filePath = path.join(inputRoot, fileName);
         if (!fs.existsSync(filePath)) {
-          console.log(`No ${table} file for ${column} column for ${row[keyColumn]}`);
-        } else {
-          console.log(`file for ${table} for ${column} for ${row[keyColumn]} exists`);
+          warnings = true;
+          console.warn(`No ${table} file for ${column} column for ${row[keyColumn]}`);
         }
       }
     }
+  }
+
+  if (!warnings) {
+    console.log('File for every column check passed.');
   }
 
   // 3) Check that there is a row for every file
@@ -218,14 +223,18 @@ async function main() {
     const name = getKeyFromFileName(file);
 
     if (!existingKeys.has(name)) {
-      console.log(`no row for file ${file}`);
-    } else {
-      console.log(`row exists for file ${file}`);
+      warnings = true;
+      console.warn(`no row for file ${file}`);
     }
   }
-
+  if (!warnings) {
+    console.log('Column for every file check passed.');
+  }
+  if (warnings === true) {
+    console.error('exiting with warnings');
+    process.exit(1);
+  }
   // 3) If not dry run, update the sql data for each changed file
-
   for (const row of dataRows) {
     // get the filename
     for (const column of columns) {
@@ -234,13 +243,21 @@ async function main() {
 
         const filePath = path.join(inputRoot, fileName);
         if (!fs.existsSync(filePath)) {
-          console.log(`No ${table} file for ${column} column for ${row[keyColumn]}`);
+          console.warn(`No ${table} file for ${column} column for ${row[keyColumn]}`);
         } else {
           const fileContents = await fs.promises.readFile(filePath, 'utf8');
           if (fileContents !== row[column]) {
-            console.log('need to update row ', row[keyColumn]);
-          } else {
-            console.log(`${row[keyColumn]} is unchanged for ${table}`);
+            if (!dryRun) {
+              console.log('updating ', row[keyColumn]);
+              await conn.execute(
+                `UPDATE \`${table}\`
+                SET \`${column}\` = ?
+                WHERE \`${keyColumn}\` = ?`,
+                [fileContents, row[keyColumn]],
+              );
+            } else {
+              console.log('DRY RUN is TRUE: would be updating ', row[keyColumn]);
+            }
           }
         }
       }
