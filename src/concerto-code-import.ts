@@ -15,7 +15,7 @@ import * as mysql from 'mysql2/promise';
 import { ExportRow } from './common/exportrow.interface';
 import { TestNodePortKey } from './common/testnodeportkey.interface';
 
-async function dbImport(
+export async function dbImport(
   conn: mysql.Connection,
   table: string,
   keyColumn: string | null,

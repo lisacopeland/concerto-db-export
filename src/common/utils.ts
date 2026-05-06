@@ -13,9 +13,10 @@ export function getArg(name: string, fallback: string | null = null) {
   return fallback;
 }
 
-export function safeIdentifier(value: string | null, label: string) {
+export function safeIdentifier(value: string | null, label: string): string | null {
   if (!/^[A-Za-z0-9_]+$/.test(value ?? '')) {
-    throw new Error(`Invalid ${label}: ${value}`);
+    // throw new Error(`Invalid ${label}: ${value}`);
+    return null;
   }
   return value;
 }
