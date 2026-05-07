@@ -41,11 +41,13 @@ export function extensionForColumn(column: string): string {
   return map[column] ?? 'txt';
 }
 
-export function normalizeText(value: string) {
-  return String(value ?? '')
-    .replace(/\r\n/g, '\n') // CRLF → LF
-    .replace(/\r/g, '\n') // stray CR → LF
-    .replace(/\s*$/, '\n'); // ensure single trailing newline
+export function normalizeText(value: string | null) {
+  return (value ?? '')
+    .replace(/^\uFEFF/, '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/[ \t]+$/gm, '')
+    .replace(/\n+$/, ''); // remove final newline(s)
 }
 
 // If the content is not empty or null, write to the filePath

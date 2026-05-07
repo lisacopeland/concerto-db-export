@@ -6,6 +6,7 @@ import {
   getKeyFromFileName,
   getTestNodePortKeyFromFileName,
   makeTestNodePortKey,
+  normalizeText,
 } from './common/utils';
 
 import * as fs from 'fs';
@@ -106,7 +107,7 @@ export async function dbImport(
           const fileContents = await fs.promises.readFile(filePath, 'utf8');
           const currentValue = row[column] as string | null;
 
-          if (fileContents !== currentValue) {
+          if (normalizeText(fileContents) !== normalizeText(currentValue)) {
             if (!dryRun) {
               console.log('updating ', warnName);
               if (!compositeMode) {
