@@ -2,12 +2,13 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as mysql from 'mysql2/promise';
 import { checkForDupes, checkForDupesComposite } from './common/sqlUtils';
-import { ExportRow } from './common/exportrow.interface';
+import { ExportRow } from './interface/exportrow.interface';
+import mysql from 'mysql2/promise';
+import type { Connection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 
 export async function dbExport(
-  conn: mysql.Connection,
+  conn: Connection,
   table: string,
   keyColumn: string | null,
   compositeMode: boolean,

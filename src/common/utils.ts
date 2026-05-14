@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { TestNodePortKey } from './testnodeportkey.interface';
+import { TestNodePortKey } from '../interface/TestNodePort.interface';
+
 // Get the arg named 'name' from the commandline
 export function getArg(name: string, fallback: string | null = null) {
   const prefix = `--${name}=`;
@@ -15,7 +16,6 @@ export function getArg(name: string, fallback: string | null = null) {
 
 export function safeIdentifier(value: string | null, label: string): string | null {
   if (!/^[A-Za-z0-9_]+$/.test(value ?? '')) {
-    // throw new Error(`Invalid ${label}: ${value}`);
     return null;
   }
   return value;

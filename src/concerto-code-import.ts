@@ -1,8 +1,11 @@
-﻿import { checkForDupes, checkForDupesComposite } from './common/sqlUtils';
+﻿import {
+  checkForDupes,
+  checkForDupesComposite,
+  extForColumn,
+  fileForEveryRow,
+} from './common/sqlUtils';
+import type { Connection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import {
-  safeIdentifier,
-  getArg,
-  makeFileName,
   getKeyFromFileName,
   getTestNodePortKeyFromFileName,
   makeTestNodePortKey,
@@ -11,15 +14,19 @@ import {
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as mysql from 'mysql2/promise';
 
-import { ExportRow } from './common/exportrow.interface';
-import { TestNodePortKey } from './common/testnodeportkey.interface';
+import { ExportRow } from './interface/exportrow.interface';
+import { TestNodePortKey } from './interface/TestNodePort.interface';
+import { ViewTemplate, ViewTemplateRow } from './viewtemplate/ViewTemplate.interface';
+import { TESTTABLE, VIEWTEMPLATETABLE } from './common/easi_const';
+import { UpdateOrInsertViewTemplate } from './viewtemplate/viewtemplate-import';
+import { UpdateOrInsertTest } from './test/test-import';
 
 export async function dbImport(
-  conn: mysql.Connection,
+  destConn: Connection,
+  srcConn: Connection,
   table: string,
-  keyColumn: string | null,
+  keyColumn: string,
   compositeMode: boolean,
   columns: string[],
   inputRoot: string,
@@ -29,16 +36,16 @@ export async function dbImport(
 
   // 1) Check for duplicate rows in the database table this will throw an error if it fails
   if (compositeMode) {
-    await checkForDupesComposite(conn);
+    await checkForDupesComposite(destConn);
   } else {
-    await checkForDupes(conn, keyColumn ?? '', table);
+    await checkForDupes(destConn, keyColumn ?? '', table);
   }
   console.log('Duplicate table key check passed.');
 
   // Execute the query to get the data
   let rows = [];
   if (compositeMode) {
-    [rows] = await conn.execute<ExportRow[]>(`
+    [rows] = await destConn.execute<ExportRow[]>(`
       SELECT
         flowTest.name AS flow_test_name,
         tn.title      AS node_title,
@@ -59,7 +66,7 @@ export async function dbImport(
   } else {
     const selectedColumns = [keyColumn, ...columns].map((c) => `\`${c}\``).join(', ');
 
-    [rows] = await conn.execute<ExportRow[]>(`
+    [rows] = await destConn.execute<ExportRow[]>(`
       SELECT ${selectedColumns}
       FROM \`${table}\`
       ORDER BY \`${keyColumn}\`
@@ -77,100 +84,45 @@ export async function dbImport(
 
   let rowWarnings = false;
   if (compositeMode) {
-    rowWarnings = await hasRowsTestNodePort(conn, inputRoot);
+    rowWarnings = await hasRowsTestNodePort(destConn, inputRoot);
   } else {
-    rowWarnings = await hasRows(conn, inputRoot, table, keyColumn ?? '');
+    rowWarnings = await hasRows(destConn, inputRoot, table, keyColumn ?? '');
   }
 
   if (!rowWarnings) {
     console.log('Column for every file check passed.');
   }
-  if (fileWarnings || rowWarnings) {
+  if (fileWarnings && !dryRun) {
     console.error('exiting with warnings');
     return;
   }
   // 3) If not dry run, update the sql data for each changed file
-  for (const row of rows) {
-    // get the filename
-    const warnName = compositeMode
-      ? `${row.flow_test_name}__${row.node_title}__${row.port_name}`
-      : `${row[keyColumn!]}`;
-    for (const column of columns) {
-      if (row[column] != null && row[column] !== '') {
-        const fileName = makeFileName(compositeMode, row, column ?? '', keyColumn ?? '');
-
-        const filePath = path.join(inputRoot, fileName);
-
-        if (!fs.existsSync(filePath)) {
-          console.warn(`No ${table} file for ${column} column for ${warnName}`);
-        } else {
-          const fileContents = await fs.promises.readFile(filePath, 'utf8');
-          const currentValue = row[column] as string | null;
-
-          if (normalizeText(fileContents) !== normalizeText(currentValue)) {
-            if (!dryRun) {
-              console.log('updating ', warnName);
-              if (!compositeMode) {
-                const keyValue = row[keyColumn!] as string;
-                await conn.execute(
-                  `UPDATE \`${table}\`
-                  SET \`${column}\` = ?
-                  WHERE \`${keyColumn}\` = ?`,
-                  [fileContents, keyValue],
-                );
-              } else {
-                await conn.execute(
-                  `UPDATE TestNodePort AS port
-                  JOIN TestNode AS node ON node.id = port.node_id
-                  JOIN Test AS flowTest ON flowTest.id = node.flowTest_id
-                  SET port.\`value\` = ?
-                  WHERE flowTest.name = ?
-                  AND node.title = ?
-                  AND port.name = ?
-                `,
-                  [fileContents, row.flow_test_name!, row.node_title!, row.port_name!],
-                );
-              }
-            } else {
-              console.log('DRY RUN is TRUE: would be updating ', warnName);
-            }
-          }
-        }
-      }
-    }
-  }
-
-  await conn.end();
+  await updateRows(destConn, srcConn, inputRoot, table, keyColumn, compositeMode, dryRun);
+  await destConn.end();
 }
 
-function fileForEveryRow(
-  rows: ExportRow[],
-  columns: string[],
-  keyColumn: string | null,
-  compositeMode: boolean,
+async function updateRows(
+  destConn: Connection,
+  srcConn: Connection,
   inputRoot: string,
   table: string,
-): boolean {
-  let warnings = false;
-  // 2) First check that there is a file for every row
-  for (const row of rows) {
-    for (const column of columns) {
-      if (row[column ?? ''] != null && row[column ?? ''] !== '') {
-        const fileName = makeFileName(compositeMode ?? '', row, column ?? '', keyColumn ?? '');
-
-        const filePath = path.join(inputRoot, fileName);
-        if (!fs.existsSync(filePath)) {
-          warnings = true;
-          console.warn(`No ${table} file for ${column} column for ${row[keyColumn ?? '']}`);
-        }
-      }
+  keyColumn: string,
+  compositeMode: boolean,
+  dryRun: boolean,
+) {
+  const files = await fs.promises.readdir(inputRoot);
+  for (const file of files) {
+    if (table === VIEWTEMPLATETABLE) {
+      UpdateOrInsertViewTemplate(destConn, srcConn, file, inputRoot, dryRun);
+    } else if (table === TESTTABLE) {
+      UpdateOrInsertTest(destConn, srcConn, file, inputRoot, dryRun);
     }
   }
-  return warnings;
 }
 
+// Test if there are rows for every file
 async function hasRows(
-  conn: mysql.Connection,
+  conn: Connection,
   inputRoot: string,
   table: string,
   keyColumn: string,
@@ -196,7 +148,7 @@ async function hasRows(
   return warnings;
 }
 
-async function hasRowsTestNodePort(conn: mysql.Connection, inputRoot: string): Promise<boolean> {
+async function hasRowsTestNodePort(conn: Connection, inputRoot: string): Promise<boolean> {
   let warnings = false;
   const files = await fs.promises.readdir(inputRoot);
   const fileNames: TestNodePortKey[] = files.map((file) => getTestNodePortKeyFromFileName(file));
