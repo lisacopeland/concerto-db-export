@@ -37,6 +37,7 @@ export async function UpdateOrInsertViewTemplate(
     }
   } else {
     // Row exists, see if you need to update
+    console.log('row exists, going to compare');
     const currentValue = currentRow[column] as string | null;
 
     if (normalizeText(fileContents) !== normalizeText(currentValue)) {
@@ -49,8 +50,7 @@ export async function UpdateOrInsertViewTemplate(
           WHERE \`${VIEWTEMPLATEKEY}\` = ?`,
           [fileContents, keyValue],
         );
-        if (result[0].affectedRows !== 1) {
-        }
+        console.log('result from update ', result[0]);
       } else {
         console.log('would be updating db with ', file);
       }

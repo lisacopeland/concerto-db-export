@@ -53,7 +53,10 @@ export function normalizeText(value: string | null) {
 // If the content is not empty or null, write to the filePath
 export function writeIfPresent(filePath: string, content: string | null | undefined) {
   if (content === undefined || content === null || content === '') return;
-  fs.writeFileSync(filePath, String(content), 'utf8');
+
+  const normalized = String(content).replace(/\n+$/, '') + '\n';
+
+  fs.writeFileSync(filePath, normalized, 'utf8');
 }
 
 export function makeFileName(compositeMode: boolean, row: any, column: string, keyColumn: string) {

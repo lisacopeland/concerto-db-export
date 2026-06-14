@@ -118,6 +118,7 @@ async function main() {
       inputRoot,
       dryRun,
     );
+    console.log('after dbimport, going to exit');
   } else {
     await dbExport(destConn, table!, keyColumn, compositeMode, columns, outRoot, dryRun);
   }

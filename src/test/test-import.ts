@@ -131,7 +131,7 @@ async function insertTestRow(destConn: Connection, test: Test) {
       directLockBy_id
     )
     VALUES (
-      ?, ?, ?, ?, ?, ?, ?,?,?
+      ?, ?, ?, ?, ?, ?, ?,?,?,
       NOW(),
       ?,
       NOW(),

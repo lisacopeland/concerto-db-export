@@ -9,15 +9,12 @@ import {
   getKeyFromFileName,
   getTestNodePortKeyFromFileName,
   makeTestNodePortKey,
-  normalizeText,
 } from './common/utils';
 
 import * as fs from 'fs';
-import * as path from 'path';
 
 import { ExportRow } from './interface/exportrow.interface';
 import { TestNodePortKey } from './interface/TestNodePort.interface';
-import { ViewTemplate, ViewTemplateRow } from './viewtemplate/ViewTemplate.interface';
 import { TESTTABLE, VIEWTEMPLATETABLE } from './common/easi_const';
 import { UpdateOrInsertViewTemplate } from './viewtemplate/viewtemplate-import';
 import { UpdateOrInsertTest } from './test/test-import';
@@ -92,13 +89,16 @@ export async function dbImport(
   if (!rowWarnings) {
     console.log('Column for every file check passed.');
   }
-  if (fileWarnings && !dryRun) {
+  /*   if (fileWarnings && !dryRun) {
     console.error('exiting with warnings');
     return;
-  }
+  } */
   // 3) If not dry run, update the sql data for each changed file
   await updateRows(destConn, srcConn, inputRoot, table, keyColumn, compositeMode, dryRun);
+  console.log('after update rows, going to close connection');
+
   await destConn.end();
+  console.log('done ending connection');
 }
 
 async function updateRows(
@@ -113,11 +113,13 @@ async function updateRows(
   const files = await fs.promises.readdir(inputRoot);
   for (const file of files) {
     if (table === VIEWTEMPLATETABLE) {
-      UpdateOrInsertViewTemplate(destConn, srcConn, file, inputRoot, dryRun);
+      console.log('on file: ', file);
+      await UpdateOrInsertViewTemplate(destConn, srcConn, file, inputRoot, dryRun);
     } else if (table === TESTTABLE) {
-      UpdateOrInsertTest(destConn, srcConn, file, inputRoot, dryRun);
+      await UpdateOrInsertTest(destConn, srcConn, file, inputRoot, dryRun);
     }
   }
+  console.log('hi from after for loop of files, exiting updateRows');
 }
 
 // Test if there are rows for every file

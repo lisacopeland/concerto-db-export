@@ -5,9 +5,10 @@
     "dev": "tsx watch src/index.ts"
   },
   "devDependencies": {
-    "@types/node": "^25.6.0",
+    "@types/node": "^25.8.0",
     "mysql2": "^3.22.3",
     "prettier": "^3.8.3",
+    "ts-node": "^10.9.2",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3"
   }
