@@ -11,5 +11,8 @@
     "ts-node": "^10.9.2",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3"
+  },
+  "dependencies": {
+    "@google-cloud/translate": "^9.4.2"
   }
 }
